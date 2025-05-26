@@ -1,14 +1,15 @@
-
 module stdlib_math
     use stdlib_kinds, only: int8, int16, int32, int64, sp, dp, xdp, qp
     use stdlib_optval, only: optval
+    use stdlib_bitsets, only: bitset_64, bitset_large
 
     implicit none
     private
-    public :: clip, gcd, linspace, logspace
+    public :: clip, swap, gcd, linspace, logspace
     public :: EULERS_NUMBER_SP, EULERS_NUMBER_DP
     public :: DEFAULT_LINSPACE_LENGTH, DEFAULT_LOGSPACE_BASE, DEFAULT_LOGSPACE_LENGTH
-    public :: arange
+    public :: stdlib_meshgrid_ij, stdlib_meshgrid_xy
+    public :: arange, arg, argd, argpi, deg2rad, rad2deg, is_close, all_close, diff, meshgrid
 
     integer, parameter :: DEFAULT_LINSPACE_LENGTH = 100
     integer, parameter :: DEFAULT_LOGSPACE_LENGTH = 50
@@ -18,6 +19,13 @@ module stdlib_math
     real(sp), parameter :: EULERS_NUMBER_SP = exp(1.0_sp)
     real(dp), parameter :: EULERS_NUMBER_DP = exp(1.0_dp)
 
+    !> Useful constants `PI` for `argd/argpi`
+    real(kind=sp), parameter :: PI_sp = acos(-1.0_sp)
+    real(kind=dp), parameter :: PI_dp = acos(-1.0_dp)
+
+    !> Values for optional argument `indexing` of `meshgrid`
+    integer, parameter :: stdlib_meshgrid_xy = 0, stdlib_meshgrid_ij = 1
+
     interface clip
         module procedure clip_int8
         module procedure clip_int16
@@ -26,6 +34,26 @@ module stdlib_math
         module procedure clip_sp
         module procedure clip_dp
     end interface clip
+
+    !> Swap the values of the lhs and rhs arguments
+    !> ([Specification](../page/specs/stdlib_math.html#swap_subroutine))
+    !>
+    !> Version: experimental
+    interface swap
+      module procedure :: swap_int8
+      module procedure :: swap_int16
+      module procedure :: swap_int32
+      module procedure :: swap_int64
+      module procedure :: swap_sp
+      module procedure :: swap_dp
+      module procedure :: swap_bitset_64
+      module procedure :: swap_bitset_large
+      module procedure :: swap_csp
+      module procedure :: swap_cdp
+      module procedure :: swap_bool
+      module procedure :: swap_str
+      module procedure :: swap_stt
+    end interface
 
     !> Returns the greatest common divisor of two integers
     !> ([Specification](../page/specs/stdlib_math.html#gcd))
@@ -420,7 +448,7 @@ module stdlib_math
     !>
     !> `arange` creates a one-dimensional `array` of the `integer/real` type 
     !>  with fixed-spaced values of given spacing, within a given interval.
-    !> ([Specification](../page/specs/stdlib_math.html#arange))
+    !> ([Specification](../page/specs/stdlib_math.html#arange-function))
     interface arange
         pure module function arange_r_sp(start, end, step) result(result)
             real(sp), intent(in) :: start
@@ -454,6 +482,537 @@ module stdlib_math
         end function arange_i_int64
     end interface arange
 
+    !> Version: experimental
+    !>
+    !> `arg` computes the phase angle in the interval (-π,π].
+    !> ([Specification](../page/specs/stdlib_math.html#arg-function))
+    interface arg
+        procedure :: arg_sp
+        procedure :: arg_dp
+    end interface arg
+
+    !> Version: experimental
+    !>
+    !> `argd` computes the phase angle of degree version in the interval (-180.0,180.0].
+    !> ([Specification](../page/specs/stdlib_math.html#argd-function))
+    interface argd
+        procedure :: argd_sp
+        procedure :: argd_dp
+    end interface argd
+
+    !> Version: experimental
+    !>
+    !> `argpi` computes the phase angle of circular version in the interval (-1.0,1.0].
+    !> ([Specification](../page/specs/stdlib_math.html#argpi-function))
+    interface argpi
+        procedure :: argpi_sp
+        procedure :: argpi_dp
+    end interface argpi
+
+    !> Version: experimental
+    !> 
+    !> `deg2rad` converts phase angles from degrees to radians.
+    !> ([Specification](../page/specs/stdlib_math.html#deg2rad-function))
+    interface deg2rad
+        procedure :: deg2rad_sp
+        procedure :: deg2rad_dp
+    end interface deg2rad
+    
+    !> Version: experimental
+    !> 
+    !> `rad2deg` converts phase angles from radians to degrees.
+    !> ([Specification](../page/specs/stdlib_math.html#rad2deg-function))
+    interface rad2deg
+        procedure :: rad2deg_sp
+        procedure :: rad2deg_dp
+    end interface rad2deg
+    
+    !> Returns a boolean scalar/array where two scalar/arrays are element-wise equal within a tolerance.
+    !> ([Specification](../page/specs/stdlib_math.html#is_close-function))
+    interface is_close
+        elemental module logical function is_close_rsp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            real(sp), intent(in) :: a, b
+            real(sp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function is_close_rsp
+        elemental module logical function is_close_rdp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            real(dp), intent(in) :: a, b
+            real(dp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function is_close_rdp
+        elemental module logical function is_close_csp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            complex(sp), intent(in) :: a, b
+            real(sp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function is_close_csp
+        elemental module logical function is_close_cdp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            complex(dp), intent(in) :: a, b
+            real(dp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function is_close_cdp
+    end interface is_close
+
+    !> Version: experimental
+    !>
+    !> Returns a boolean scalar where two arrays are element-wise equal within a tolerance.
+    !> ([Specification](../page/specs/stdlib_math.html#all_close-function))
+    interface all_close
+        logical pure module function all_close_1_rsp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            real(sp), intent(in) :: a(:), b(:)
+            real(sp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_1_rsp
+        logical pure module function all_close_2_rsp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            real(sp), intent(in) :: a(:,:), b(:,:)
+            real(sp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_2_rsp
+        logical pure module function all_close_3_rsp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            real(sp), intent(in) :: a(:,:,:), b(:,:,:)
+            real(sp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_3_rsp
+        logical pure module function all_close_4_rsp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            real(sp), intent(in) :: a(:,:,:,:), b(:,:,:,:)
+            real(sp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_4_rsp
+        logical pure module function all_close_1_rdp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            real(dp), intent(in) :: a(:), b(:)
+            real(dp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_1_rdp
+        logical pure module function all_close_2_rdp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            real(dp), intent(in) :: a(:,:), b(:,:)
+            real(dp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_2_rdp
+        logical pure module function all_close_3_rdp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            real(dp), intent(in) :: a(:,:,:), b(:,:,:)
+            real(dp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_3_rdp
+        logical pure module function all_close_4_rdp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            real(dp), intent(in) :: a(:,:,:,:), b(:,:,:,:)
+            real(dp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_4_rdp
+        logical pure module function all_close_1_csp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            complex(sp), intent(in) :: a(:), b(:)
+            real(sp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_1_csp
+        logical pure module function all_close_2_csp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            complex(sp), intent(in) :: a(:,:), b(:,:)
+            real(sp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_2_csp
+        logical pure module function all_close_3_csp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            complex(sp), intent(in) :: a(:,:,:), b(:,:,:)
+            real(sp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_3_csp
+        logical pure module function all_close_4_csp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            complex(sp), intent(in) :: a(:,:,:,:), b(:,:,:,:)
+            real(sp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_4_csp
+        logical pure module function all_close_1_cdp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            complex(dp), intent(in) :: a(:), b(:)
+            real(dp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_1_cdp
+        logical pure module function all_close_2_cdp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            complex(dp), intent(in) :: a(:,:), b(:,:)
+            real(dp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_2_cdp
+        logical pure module function all_close_3_cdp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            complex(dp), intent(in) :: a(:,:,:), b(:,:,:)
+            real(dp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_3_cdp
+        logical pure module function all_close_4_cdp(a, b, rel_tol, abs_tol, equal_nan) result(close)
+            complex(dp), intent(in) :: a(:,:,:,:), b(:,:,:,:)
+            real(dp), intent(in), optional :: rel_tol, abs_tol
+            logical, intent(in), optional :: equal_nan
+        end function all_close_4_cdp
+    end interface all_close
+    
+    !> Version: experimental
+    !>
+    !> Computes differences between adjacent elements of an array.
+    !> ([Specification](../page/specs/stdlib_math.html#diff-function))
+    interface diff
+        pure module function diff_1_sp(x, n, prepend, append) result(y)
+            real(sp), intent(in) :: x(:)
+            integer, intent(in), optional :: n
+            real(sp), intent(in), optional :: prepend(:), append(:)
+            real(sp), allocatable :: y(:)
+        end function diff_1_sp
+        pure module function diff_2_sp(X, n, dim, prepend, append) result(y)
+            real(sp), intent(in) :: x(:, :)
+            integer, intent(in), optional :: n, dim
+            real(sp), intent(in), optional :: prepend(:, :), append(:, :)
+            real(sp), allocatable :: y(:, :)
+        end function diff_2_sp
+        pure module function diff_1_dp(x, n, prepend, append) result(y)
+            real(dp), intent(in) :: x(:)
+            integer, intent(in), optional :: n
+            real(dp), intent(in), optional :: prepend(:), append(:)
+            real(dp), allocatable :: y(:)
+        end function diff_1_dp
+        pure module function diff_2_dp(X, n, dim, prepend, append) result(y)
+            real(dp), intent(in) :: x(:, :)
+            integer, intent(in), optional :: n, dim
+            real(dp), intent(in), optional :: prepend(:, :), append(:, :)
+            real(dp), allocatable :: y(:, :)
+        end function diff_2_dp
+        pure module function diff_1_int8(x, n, prepend, append) result(y)
+            integer(int8), intent(in) :: x(:)
+            integer, intent(in), optional :: n
+            integer(int8), intent(in), optional :: prepend(:), append(:)
+            integer(int8), allocatable :: y(:)
+        end function diff_1_int8
+        pure module function diff_2_int8(X, n, dim, prepend, append) result(y)
+            integer(int8), intent(in) :: x(:, :)
+            integer, intent(in), optional :: n, dim
+            integer(int8), intent(in), optional :: prepend(:, :), append(:, :)
+            integer(int8), allocatable :: y(:, :)
+        end function diff_2_int8
+        pure module function diff_1_int16(x, n, prepend, append) result(y)
+            integer(int16), intent(in) :: x(:)
+            integer, intent(in), optional :: n
+            integer(int16), intent(in), optional :: prepend(:), append(:)
+            integer(int16), allocatable :: y(:)
+        end function diff_1_int16
+        pure module function diff_2_int16(X, n, dim, prepend, append) result(y)
+            integer(int16), intent(in) :: x(:, :)
+            integer, intent(in), optional :: n, dim
+            integer(int16), intent(in), optional :: prepend(:, :), append(:, :)
+            integer(int16), allocatable :: y(:, :)
+        end function diff_2_int16
+        pure module function diff_1_int32(x, n, prepend, append) result(y)
+            integer(int32), intent(in) :: x(:)
+            integer, intent(in), optional :: n
+            integer(int32), intent(in), optional :: prepend(:), append(:)
+            integer(int32), allocatable :: y(:)
+        end function diff_1_int32
+        pure module function diff_2_int32(X, n, dim, prepend, append) result(y)
+            integer(int32), intent(in) :: x(:, :)
+            integer, intent(in), optional :: n, dim
+            integer(int32), intent(in), optional :: prepend(:, :), append(:, :)
+            integer(int32), allocatable :: y(:, :)
+        end function diff_2_int32
+        pure module function diff_1_int64(x, n, prepend, append) result(y)
+            integer(int64), intent(in) :: x(:)
+            integer, intent(in), optional :: n
+            integer(int64), intent(in), optional :: prepend(:), append(:)
+            integer(int64), allocatable :: y(:)
+        end function diff_1_int64
+        pure module function diff_2_int64(X, n, dim, prepend, append) result(y)
+            integer(int64), intent(in) :: x(:, :)
+            integer, intent(in), optional :: n, dim
+            integer(int64), intent(in), optional :: prepend(:, :), append(:, :)
+            integer(int64), allocatable :: y(:, :)
+        end function diff_2_int64
+    end interface diff
+
+
+    !> Version: experimental
+    !>
+    !> Computes a list of coordinate matrices from coordinate vectors.
+    !> ([Specification](../page/specs/stdlib_math.html#meshgrid))
+    interface meshgrid
+        module subroutine meshgrid_1_iint8_iint8(&
+                x1,  &
+                xm1,  &
+                indexing &
+        )
+            integer(int8), intent(in) :: x1(:)
+            integer(int8), intent(out) :: xm1 (:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_1_iint8_iint8
+        module subroutine meshgrid_2_iint8_iint8(&
+                x1, x2,  &
+                xm1, xm2,  &
+                indexing &
+        )
+            integer(int8), intent(in) :: x1(:)
+            integer(int8), intent(out) :: xm1 (:,:)
+            integer(int8), intent(in) :: x2(:)
+            integer(int8), intent(out) :: xm2 (:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_2_iint8_iint8
+        module subroutine meshgrid_3_iint8_iint8(&
+                x1, x2, x3,  &
+                xm1, xm2, xm3,  &
+                indexing &
+        )
+            integer(int8), intent(in) :: x1(:)
+            integer(int8), intent(out) :: xm1 (:,:,:)
+            integer(int8), intent(in) :: x2(:)
+            integer(int8), intent(out) :: xm2 (:,:,:)
+            integer(int8), intent(in) :: x3(:)
+            integer(int8), intent(out) :: xm3 (:,:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_3_iint8_iint8
+        module subroutine meshgrid_4_iint8_iint8(&
+                x1, x2, x3, x4,  &
+                xm1, xm2, xm3, xm4,  &
+                indexing &
+        )
+            integer(int8), intent(in) :: x1(:)
+            integer(int8), intent(out) :: xm1 (:,:,:,:)
+            integer(int8), intent(in) :: x2(:)
+            integer(int8), intent(out) :: xm2 (:,:,:,:)
+            integer(int8), intent(in) :: x3(:)
+            integer(int8), intent(out) :: xm3 (:,:,:,:)
+            integer(int8), intent(in) :: x4(:)
+            integer(int8), intent(out) :: xm4 (:,:,:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_4_iint8_iint8
+        module subroutine meshgrid_1_iint16_iint16(&
+                x1,  &
+                xm1,  &
+                indexing &
+        )
+            integer(int16), intent(in) :: x1(:)
+            integer(int16), intent(out) :: xm1 (:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_1_iint16_iint16
+        module subroutine meshgrid_2_iint16_iint16(&
+                x1, x2,  &
+                xm1, xm2,  &
+                indexing &
+        )
+            integer(int16), intent(in) :: x1(:)
+            integer(int16), intent(out) :: xm1 (:,:)
+            integer(int16), intent(in) :: x2(:)
+            integer(int16), intent(out) :: xm2 (:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_2_iint16_iint16
+        module subroutine meshgrid_3_iint16_iint16(&
+                x1, x2, x3,  &
+                xm1, xm2, xm3,  &
+                indexing &
+        )
+            integer(int16), intent(in) :: x1(:)
+            integer(int16), intent(out) :: xm1 (:,:,:)
+            integer(int16), intent(in) :: x2(:)
+            integer(int16), intent(out) :: xm2 (:,:,:)
+            integer(int16), intent(in) :: x3(:)
+            integer(int16), intent(out) :: xm3 (:,:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_3_iint16_iint16
+        module subroutine meshgrid_4_iint16_iint16(&
+                x1, x2, x3, x4,  &
+                xm1, xm2, xm3, xm4,  &
+                indexing &
+        )
+            integer(int16), intent(in) :: x1(:)
+            integer(int16), intent(out) :: xm1 (:,:,:,:)
+            integer(int16), intent(in) :: x2(:)
+            integer(int16), intent(out) :: xm2 (:,:,:,:)
+            integer(int16), intent(in) :: x3(:)
+            integer(int16), intent(out) :: xm3 (:,:,:,:)
+            integer(int16), intent(in) :: x4(:)
+            integer(int16), intent(out) :: xm4 (:,:,:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_4_iint16_iint16
+        module subroutine meshgrid_1_iint32_iint32(&
+                x1,  &
+                xm1,  &
+                indexing &
+        )
+            integer(int32), intent(in) :: x1(:)
+            integer(int32), intent(out) :: xm1 (:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_1_iint32_iint32
+        module subroutine meshgrid_2_iint32_iint32(&
+                x1, x2,  &
+                xm1, xm2,  &
+                indexing &
+        )
+            integer(int32), intent(in) :: x1(:)
+            integer(int32), intent(out) :: xm1 (:,:)
+            integer(int32), intent(in) :: x2(:)
+            integer(int32), intent(out) :: xm2 (:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_2_iint32_iint32
+        module subroutine meshgrid_3_iint32_iint32(&
+                x1, x2, x3,  &
+                xm1, xm2, xm3,  &
+                indexing &
+        )
+            integer(int32), intent(in) :: x1(:)
+            integer(int32), intent(out) :: xm1 (:,:,:)
+            integer(int32), intent(in) :: x2(:)
+            integer(int32), intent(out) :: xm2 (:,:,:)
+            integer(int32), intent(in) :: x3(:)
+            integer(int32), intent(out) :: xm3 (:,:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_3_iint32_iint32
+        module subroutine meshgrid_4_iint32_iint32(&
+                x1, x2, x3, x4,  &
+                xm1, xm2, xm3, xm4,  &
+                indexing &
+        )
+            integer(int32), intent(in) :: x1(:)
+            integer(int32), intent(out) :: xm1 (:,:,:,:)
+            integer(int32), intent(in) :: x2(:)
+            integer(int32), intent(out) :: xm2 (:,:,:,:)
+            integer(int32), intent(in) :: x3(:)
+            integer(int32), intent(out) :: xm3 (:,:,:,:)
+            integer(int32), intent(in) :: x4(:)
+            integer(int32), intent(out) :: xm4 (:,:,:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_4_iint32_iint32
+        module subroutine meshgrid_1_iint64_iint64(&
+                x1,  &
+                xm1,  &
+                indexing &
+        )
+            integer(int64), intent(in) :: x1(:)
+            integer(int64), intent(out) :: xm1 (:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_1_iint64_iint64
+        module subroutine meshgrid_2_iint64_iint64(&
+                x1, x2,  &
+                xm1, xm2,  &
+                indexing &
+        )
+            integer(int64), intent(in) :: x1(:)
+            integer(int64), intent(out) :: xm1 (:,:)
+            integer(int64), intent(in) :: x2(:)
+            integer(int64), intent(out) :: xm2 (:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_2_iint64_iint64
+        module subroutine meshgrid_3_iint64_iint64(&
+                x1, x2, x3,  &
+                xm1, xm2, xm3,  &
+                indexing &
+        )
+            integer(int64), intent(in) :: x1(:)
+            integer(int64), intent(out) :: xm1 (:,:,:)
+            integer(int64), intent(in) :: x2(:)
+            integer(int64), intent(out) :: xm2 (:,:,:)
+            integer(int64), intent(in) :: x3(:)
+            integer(int64), intent(out) :: xm3 (:,:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_3_iint64_iint64
+        module subroutine meshgrid_4_iint64_iint64(&
+                x1, x2, x3, x4,  &
+                xm1, xm2, xm3, xm4,  &
+                indexing &
+        )
+            integer(int64), intent(in) :: x1(:)
+            integer(int64), intent(out) :: xm1 (:,:,:,:)
+            integer(int64), intent(in) :: x2(:)
+            integer(int64), intent(out) :: xm2 (:,:,:,:)
+            integer(int64), intent(in) :: x3(:)
+            integer(int64), intent(out) :: xm3 (:,:,:,:)
+            integer(int64), intent(in) :: x4(:)
+            integer(int64), intent(out) :: xm4 (:,:,:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_4_iint64_iint64
+        module subroutine meshgrid_1_rsp_rsp(&
+                x1,  &
+                xm1,  &
+                indexing &
+        )
+            real(sp), intent(in) :: x1(:)
+            real(sp), intent(out) :: xm1 (:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_1_rsp_rsp
+        module subroutine meshgrid_2_rsp_rsp(&
+                x1, x2,  &
+                xm1, xm2,  &
+                indexing &
+        )
+            real(sp), intent(in) :: x1(:)
+            real(sp), intent(out) :: xm1 (:,:)
+            real(sp), intent(in) :: x2(:)
+            real(sp), intent(out) :: xm2 (:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_2_rsp_rsp
+        module subroutine meshgrid_3_rsp_rsp(&
+                x1, x2, x3,  &
+                xm1, xm2, xm3,  &
+                indexing &
+        )
+            real(sp), intent(in) :: x1(:)
+            real(sp), intent(out) :: xm1 (:,:,:)
+            real(sp), intent(in) :: x2(:)
+            real(sp), intent(out) :: xm2 (:,:,:)
+            real(sp), intent(in) :: x3(:)
+            real(sp), intent(out) :: xm3 (:,:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_3_rsp_rsp
+        module subroutine meshgrid_4_rsp_rsp(&
+                x1, x2, x3, x4,  &
+                xm1, xm2, xm3, xm4,  &
+                indexing &
+        )
+            real(sp), intent(in) :: x1(:)
+            real(sp), intent(out) :: xm1 (:,:,:,:)
+            real(sp), intent(in) :: x2(:)
+            real(sp), intent(out) :: xm2 (:,:,:,:)
+            real(sp), intent(in) :: x3(:)
+            real(sp), intent(out) :: xm3 (:,:,:,:)
+            real(sp), intent(in) :: x4(:)
+            real(sp), intent(out) :: xm4 (:,:,:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_4_rsp_rsp
+        module subroutine meshgrid_1_rdp_rdp(&
+                x1,  &
+                xm1,  &
+                indexing &
+        )
+            real(dp), intent(in) :: x1(:)
+            real(dp), intent(out) :: xm1 (:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_1_rdp_rdp
+        module subroutine meshgrid_2_rdp_rdp(&
+                x1, x2,  &
+                xm1, xm2,  &
+                indexing &
+        )
+            real(dp), intent(in) :: x1(:)
+            real(dp), intent(out) :: xm1 (:,:)
+            real(dp), intent(in) :: x2(:)
+            real(dp), intent(out) :: xm2 (:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_2_rdp_rdp
+        module subroutine meshgrid_3_rdp_rdp(&
+                x1, x2, x3,  &
+                xm1, xm2, xm3,  &
+                indexing &
+        )
+            real(dp), intent(in) :: x1(:)
+            real(dp), intent(out) :: xm1 (:,:,:)
+            real(dp), intent(in) :: x2(:)
+            real(dp), intent(out) :: xm2 (:,:,:)
+            real(dp), intent(in) :: x3(:)
+            real(dp), intent(out) :: xm3 (:,:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_3_rdp_rdp
+        module subroutine meshgrid_4_rdp_rdp(&
+                x1, x2, x3, x4,  &
+                xm1, xm2, xm3, xm4,  &
+                indexing &
+        )
+            real(dp), intent(in) :: x1(:)
+            real(dp), intent(out) :: xm1 (:,:,:,:)
+            real(dp), intent(in) :: x2(:)
+            real(dp), intent(out) :: xm2 (:,:,:,:)
+            real(dp), intent(in) :: x3(:)
+            real(dp), intent(out) :: xm3 (:,:,:,:)
+            real(dp), intent(in) :: x4(:)
+            real(dp), intent(out) :: xm4 (:,:,:,:)
+            integer, intent(in), optional :: indexing
+        end subroutine meshgrid_4_rdp_rdp
+    end interface meshgrid
 contains
 
     elemental function clip_int8(x, xmin, xmax) result(res)
@@ -510,6 +1069,86 @@ contains
         res = max(min(x, xmax), xmin)
     end function clip_dp
 
+
+    elemental function arg_sp(z) result(result) 
+        complex(sp), intent(in) :: z
+        real(sp) :: result
+
+        result = merge(0.0_sp, atan2(z%im, z%re), z == (0.0_sp, 0.0_sp))
+
+    end function arg_sp
+
+    elemental function argd_sp(z) result(result) 
+        complex(sp), intent(in) :: z
+        real(sp) :: result
+
+        result = merge(0.0_sp, atan2(z%im, z%re)*180.0_sp/PI_sp, &
+                 z == (0.0_sp, 0.0_sp))
+
+    end function argd_sp
+
+    elemental function argpi_sp(z) result(result) 
+        complex(sp), intent(in) :: z
+        real(sp) :: result
+
+        result = merge(0.0_sp, atan2(z%im, z%re)/PI_sp, &
+                 z == (0.0_sp, 0.0_sp))
+                 
+
+    end function argpi_sp
+    elemental function arg_dp(z) result(result) 
+        complex(dp), intent(in) :: z
+        real(dp) :: result
+
+        result = merge(0.0_dp, atan2(z%im, z%re), z == (0.0_dp, 0.0_dp))
+
+    end function arg_dp
+
+    elemental function argd_dp(z) result(result) 
+        complex(dp), intent(in) :: z
+        real(dp) :: result
+
+        result = merge(0.0_dp, atan2(z%im, z%re)*180.0_dp/PI_dp, &
+                 z == (0.0_dp, 0.0_dp))
+
+    end function argd_dp
+
+    elemental function argpi_dp(z) result(result) 
+        complex(dp), intent(in) :: z
+        real(dp) :: result
+
+        result = merge(0.0_dp, atan2(z%im, z%re)/PI_dp, &
+                 z == (0.0_dp, 0.0_dp))
+                 
+
+    end function argpi_dp
+
+    elemental function deg2rad_sp(theta) result(result)
+        real(sp), intent(in) :: theta
+        real(sp) :: result
+        result = theta * PI_sp / 180.0_sp
+        
+    end function deg2rad_sp
+    
+    elemental function rad2deg_sp(theta) result(result)
+        real(sp), intent(in) :: theta
+        real(sp) :: result
+        result = theta * 180.0_sp / PI_sp
+        
+    end function rad2deg_sp
+    elemental function deg2rad_dp(theta) result(result)
+        real(dp), intent(in) :: theta
+        real(dp) :: result
+        result = theta * PI_dp / 180.0_dp
+        
+    end function deg2rad_dp
+    
+    elemental function rad2deg_dp(theta) result(result)
+        real(dp), intent(in) :: theta
+        real(dp) :: result
+        result = theta * 180.0_dp / PI_dp
+        
+    end function rad2deg_dp
 
     !> Returns the greatest common divisor of two integers of kind int8
     !> using the Euclidean algorithm.
@@ -583,4 +1222,86 @@ contains
         end do
     end function gcd_int64
 
+
+    elemental subroutine swap_int8(lhs, rhs)
+        integer(int8), intent(inout) :: lhs, rhs
+        integer(int8) :: temp
+        temp = lhs; lhs = rhs; rhs = temp
+    end subroutine
+
+    elemental subroutine swap_int16(lhs, rhs)
+        integer(int16), intent(inout) :: lhs, rhs
+        integer(int16) :: temp
+        temp = lhs; lhs = rhs; rhs = temp
+    end subroutine
+
+    elemental subroutine swap_int32(lhs, rhs)
+        integer(int32), intent(inout) :: lhs, rhs
+        integer(int32) :: temp
+        temp = lhs; lhs = rhs; rhs = temp
+    end subroutine
+
+    elemental subroutine swap_int64(lhs, rhs)
+        integer(int64), intent(inout) :: lhs, rhs
+        integer(int64) :: temp
+        temp = lhs; lhs = rhs; rhs = temp
+    end subroutine
+
+    elemental subroutine swap_sp(lhs, rhs)
+        real(sp), intent(inout) :: lhs, rhs
+        real(sp) :: temp
+        temp = lhs; lhs = rhs; rhs = temp
+    end subroutine
+
+    elemental subroutine swap_dp(lhs, rhs)
+        real(dp), intent(inout) :: lhs, rhs
+        real(dp) :: temp
+        temp = lhs; lhs = rhs; rhs = temp
+    end subroutine
+
+    elemental subroutine swap_bitset_64(lhs, rhs)
+        type(bitset_64), intent(inout) :: lhs, rhs
+        type(bitset_64) :: temp
+        temp = lhs; lhs = rhs; rhs = temp
+    end subroutine
+
+    elemental subroutine swap_bitset_large(lhs, rhs)
+        type(bitset_large), intent(inout) :: lhs, rhs
+        type(bitset_large) :: temp
+        temp = lhs; lhs = rhs; rhs = temp
+    end subroutine
+
+
+    elemental subroutine swap_csp(lhs, rhs)
+        complex(sp), intent(inout) :: lhs, rhs
+        complex(sp) :: temp
+        temp = lhs; lhs = rhs; rhs = temp
+    end subroutine
+
+    elemental subroutine swap_cdp(lhs, rhs)
+        complex(dp), intent(inout) :: lhs, rhs
+        complex(dp) :: temp
+        temp = lhs; lhs = rhs; rhs = temp
+    end subroutine
+
+
+    elemental subroutine swap_bool(lhs, rhs)
+        logical, intent(inout) :: lhs, rhs
+        logical :: temp
+        temp = lhs; lhs = rhs; rhs = temp
+    end subroutine
+
+    elemental subroutine swap_str(lhs,rhs)
+        character(*), intent(inout) :: lhs, rhs
+        character(len=max(len(lhs), len(rhs))) :: temp
+        temp = lhs ; lhs = rhs ; rhs = temp
+    end subroutine
+
+    elemental subroutine swap_stt(lhs,rhs)
+        use stdlib_string_type, only: string_type
+        type(string_type), intent(inout) :: lhs, rhs
+        type(string_type) :: temp
+        temp = lhs ; lhs = rhs ; rhs = temp
+    end subroutine
+    
 end module stdlib_math
